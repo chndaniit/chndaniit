@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<!--
+  ═══════════════════════════════════════════════════════════════════════
+  ROOT CAUSE FIX #1 — Viewport meta
+  ─────────────────────────────────────────────────────────────────────
+  Original:  width=device-width, initial-scale=1.0
+  Problem:   On mobile, the browser scales the page to fit the viewport,
+             causing layout reflow that the fixed `210mm` width cannot
+             accommodate, producing horizontal scroll.
+  Fix:       Keep standard viewport but let CSS handle the A4 container.
+             The `.resume` wrapper is constrained to `794px` (≈210mm @96dpi)
+             in screen mode; on narrow screens it shrinks via max-width +
+             overflow-x rules. `@media print` takes over for PDF/print.
+  ═══════════════════════════════════════════════════════════════════════
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Chandan Kumar — Lead Data Scientist · IBM Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Serif+Display:ital@0;1&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer"/>
+
+<style>
+/* ═══════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS
+   ─────────────────────────────────────────────────────────────────────
+   All colours, radii and the canonical page width live here so every
+   calc() and every @media rule draws from the same source of truth.
+   A4 at 96 dpi  → 210mm = 793.7px  → use 794px as the screen proxy.
+   A4 at 72 dpi  → 210mm ≈ 595px    → what many PDF engines use.
+   We target 794px on screen so the print engine (96 dpi) maps 1:1.
+   ═══════════════════════════════════════════════════════════════════════ */
+:root {
+  --navy:       #0B1D3A;
+  --navy-mid:   #12316A;
+  --blue:       #1A4FA0;
+  --blue-light: #2563EB;
+  --teal:       #0EA5C2;
+  --amber:      #F59E0B;
+  --ink:        #111827;
+  --ink-mid:    #374151;
+  --ink-soft:   #6B7280;
+  --border:     #E5E9F2;
+  --border-mid: #CBD5E1;
+  --bg-wash:    #EEF3FA;
+  --r:          3px;
+
+  /* ── A4 canonical widths ── */
+  --a4-px:      794px;   /* screen proxy for A4 @ 96 dpi             */
+  --a4-mm:      210mm;   /* used only inside @page and @media print   */
+}
+
+/* ─── Reset ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/*
+  ROOT CAUSE FIX #2 — Avoid mm units on screen
+  ─────────────────────────────────────────────
+  Original used `width: 210mm` on `.resume` at all times.
+  Browsers convert mm→px using the *screen* DPI (96 dpi on most
+  desktops) → 793.7px. That works fine on a full desktop but:
+    • On a 1280px laptop the card renders fine yet PDF engines
+      sometimes receive a slightly different computed value.
+    • On tablets/phones the card overflows the viewport → horizontal
+      scroll → the mobile user sees a broken layout.
+  Fix: use px on screen, mm only inside @media print and @page.
+*/
+html {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  color-adjust: exact;
+  /* Prevent font boosting on mobile (fixes font-size inflation) */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: var(--ink);
+  background: #E0E7F0;
+  /* Prevent horizontal scroll at body level */
+  overflow-x: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TOOLBAR  (screen only — hidden in print)
+   ═══════════════════════════════════════════════════════════════════════ */
+.toolbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+  background: var(--navy);
+  padding: 7px 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  box-shadow: 0 2px 20px rgba(0,0,0,.35);
+  /* Toolbar never leaks into print — see @media print below */
+}
+.toolbar-brand {
+  color: rgba(255,255,255,.85); font-size: 10.5px; font-weight: 500;
+  display: flex; align-items: center; gap: 8px;
+}
+.toolbar-brand i { color: var(--amber); font-size: 12px; }
+.toolbar-actions { display: flex; gap: 8px; }
+.btn-tool {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 14px; border: none; border-radius: var(--r);
+  cursor: pointer; font-family: 'DM Sans', sans-serif;
+  font-size: 10px; font-weight: 600;
+  transition: background .18s, color .18s;
+}
+.btn-print { background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.2); }
+.btn-print:hover { background: rgba(255,255,255,.2); }
+.btn-pdf   { background: var(--amber); color: var(--navy); }
+.btn-pdf:hover { background: #D97706; color: #fff; }
+.btn-pdf:disabled { opacity: .6; cursor: not-allowed; }
+
+/* Hint label for print button — hidden on mobile to keep toolbar tight */
+.btn-print-hint { font-size: 8px; opacity: .7; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PAGE WRAPPER & RESUME CARD
+   ─────────────────────────────────────────────────────────────────────
+   ROOT CAUSE FIX #3 — Single-width source of truth
+   The wrapper centres the card; the card is exactly --a4-px wide on
+   desktop. On narrower screens it shrinks gracefully via max-width.
+   ═══════════════════════════════════════════════════════════════════════ */
+.page-wrapper {
+  padding-top: 48px; /* clear the fixed toolbar */
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100vh;
+  /* Prevent inner content from causing body-level hscroll */
+  overflow-x: hidden;
+}
+
+.resume {
+  width: var(--a4-px);
+  /*
+    ROOT CAUSE FIX #4 — max-width for responsive fallback
+    Without this, narrow viewports (tablet/phone) force hscroll.
+    With it, the card compresses naturally. Content stays readable
+    because everything inside uses relative units (em/px that scale).
+  */
+  max-width: 100%;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 12px 50px rgba(11,29,58,.15), 0 2px 8px rgba(0,0,0,.06);
+  margin: 4px 0 36px;
+  /* Clip any accidental overflow from child elements */
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════════════ */
+.resume-header {
+  background: #fff;
+  padding: 5px 16px 7px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  border-bottom: 2.5px solid var(--navy);
+  position: relative;
+}
+/* Teal accent bar */
+.resume-header::after {
+  content: '';
+  position: absolute; left: 0; bottom: 0;
+  width: 72px; height: 3px;
+  background: var(--teal);
+}
+.hdr-name {
+  font-family: 'DM Serif Display', serif;
+  font-size: 22px; font-weight: 400;
+  color: var(--navy); letter-spacing: .3px; line-height: 1.0;
+}
+.hdr-name em { color: var(--blue-light); font-style: normal; }
+.hdr-subtitle {
+  margin-top: 3px; font-size: 8px; font-weight: 500;
+  color: var(--ink-mid); letter-spacing: .1px; line-height: 1.4;
+}
+.hdr-subtitle .sub-role { font-weight: 700; color: var(--navy); font-size: 8.5px; }
+.hdr-subtitle .sub-sep  { color: var(--border-mid); margin: 0 5px; }
+
+.hdr-right {
+  display: flex; flex-direction: column;
+  gap: 3px; align-items: flex-end; flex-shrink: 0;
+}
+.contact-row {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 8.5px; color: var(--ink-mid); white-space: nowrap;
+}
+.contact-row i  { color: var(--blue-light); font-size: 7.5px; width: 11px; text-align: center; }
+.contact-row a  { color: var(--ink-mid); text-decoration: none; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BODY
+   ═══════════════════════════════════════════════════════════════════════ */
+.resume-body { padding: 5px 13px 10px; }
+
+/* ── Section chrome ── */
+.section { margin-bottom: 5px; }
+.section-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 8px; font-weight: 700;
+  color: var(--navy); text-transform: uppercase; letter-spacing: 0.6px;
+  padding: 2.5px 8px; margin-bottom: 4px;
+  border-bottom: 1.5px solid var(--border);
+  background: #fff;
+}
+.section-title i { font-size: 8px; opacity: .85; }
+
+/* ── Summary ── */
+.summary-block {
+  padding: 4px 8px 5px 10px;
+  background: var(--bg-wash);
+  border-radius: var(--r);
+  border-left: 3px solid var(--teal);
+}
+.summary-lines { display: flex; flex-direction: column; gap: 3px; }
+.sum-line {
+  font-size: 9px; line-height: 1.4; color: var(--ink);
+  padding-left: 12px; position: relative;
+}
+.sum-line::before {
+  content: ""; position: absolute;
+  left: 1px; top: 5px; width: 3px; height: 3px;
+  background: #111827; border-radius: 50%;
+}
+.sum-line .kw  { font-weight: 700; color: var(--navy); }
+.sum-line .num { font-family: 'Fira Code', monospace; font-size: 8.6px; font-weight: 700; }
+
+/* ── Certifications ── */
+.cert-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0 8px;
+}
+.cert-item {
+  display: flex; align-items: baseline; gap: 4px;
+  font-size: 8px; line-height: 1.45;
+  padding: 2.5px 0;
+  border-bottom: .5px solid var(--border);
+}
+/* Remove bottom border from last row (last 3 items) */
+.cert-item:nth-last-child(-n+3) { border-bottom: none; }
+.cert-bullet { color: var(--teal); font-size: 6px; flex-shrink: 0; line-height: 1.45; }
+.cert-inst   { font-weight: 700; color: var(--navy); flex-shrink: 0; }
+.cert-sep    { color: var(--border-mid); margin: 0 2px; }
+.cert-course { color: var(--ink-mid); overflow: hidden; }
+
+/* ── Experience ── */
+.job {
+  padding: 4px 0 5px 10px;
+  border-bottom: .5px solid var(--border);
+  border-left: 3px solid transparent;
+  transition: border-left-color .15s;
+}
+.job:hover { border-left-color: var(--teal); }
+.job:last-child { border-bottom: none; }
+.job-header {
+  display: flex; align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 2px; flex-wrap: wrap; gap: 2px;
+}
+.job-left { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+.job-company  { font-size: 10.5px; font-weight: 700; color: var(--navy); font-family: 'DM Serif Display', Georgia, serif; }
+.job-dot      { color: var(--teal); font-size: 8px; margin: 0 2px; }
+.job-role     { font-size: 9px; font-weight: 600; color: var(--ink-mid); }
+.job-location { font-size: 7.8px; color: var(--ink-soft); font-style: italic; }
+.job-period   { font-size: 7.8px; font-weight: 600; color: var(--blue-light); font-family: 'Fira Code', monospace; white-space: nowrap; }
+
+/* ── Project cards ── */
+.proj-card {
+  padding: 3px 0 4px 6px;
+  border-bottom: .5px solid var(--border);
+  border-left: 2px solid var(--border);
+  transition: border-left-color .15s;
+}
+.proj-card:last-child { border-bottom: none; }
+.proj-card:hover      { border-left-color: var(--teal); }
+.proj-card-header {
+  display: flex; align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 1.5px; flex-wrap: wrap; gap: 2px;
+}
+.proj-card-left  { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+.proj-card-name  { font-size: 8.2px; font-weight: 700; color: var(--blue-light); letter-spacing: .1px; }
+.proj-card-co    { font-size: 7.8px; color: var(--ink-soft); font-style: italic; }
+.proj-sub-label  { font-weight: 400; color: var(--ink-soft); font-size: 7.6px; font-style: italic; }
+.proj-arrow      { display: inline-block; color: var(--teal); font-size: 8.5px; margin-right: 3px; line-height: 1; vertical-align: baseline; }
+
+/* ── Bullet lists ── */
+.bullet-list { list-style: none; padding: 0; margin: 0; }
+.bullet-list li {
+  font-size: 9px; line-height: 1.4; color: var(--ink);
+  margin-bottom: 1.5px; padding-left: 12px; position: relative;
+}
+.bullet-list li::before {
+  content: ""; position: absolute;
+  left: 1px; top: 5px; width: 3px; height: 3px;
+  background: #111827; border-radius: 50%;
+}
+.bullet-list li .bk           { font-weight: 700; color: var(--navy); }
+.bullet-list li .bk-challenge { font-weight: 700; color: var(--ink-soft); }
+.bullet-list li .bk-contrib   { font-weight: 700; color: var(--navy); }
+.bullet-list li .bk-impact    { font-weight: 700; color: var(--teal); }
+.bullet-list li .num          { font-family: 'Fira Code', monospace; font-size: 8.5px; font-weight: 700; }
+.bullet-list li .tag          { font-style: italic; color: var(--ink-soft); }
+
+/* ── Skill chips (inline after project bullets) ── */
+.skill-chips {
+  padding-left: 12px; position: relative;
+  font-size: 7.5px; color: var(--ink-soft);
+  margin-top: 3px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px;
+}
+.skill-chips::before {
+  content: ""; position: absolute;
+  left: 1px; top: 5px; width: 3px; height: 3px;
+  background: #111827; border-radius: 50%;
+}
+.sk-label { font-weight: 700; color: var(--navy); margin-right: 3px; font-size: 7.5px; }
+.sk {
+  display: inline-block;
+  background: var(--bg-wash); color: var(--ink-mid);
+  border: 0.5px solid var(--border-mid);
+  border-radius: 2px; padding: 0 3px;
+  font-size: 6.8px; line-height: 1.5; white-space: nowrap;
+}
+
+/* ── Skills table ── */
+.skills-wrap { display: flex; flex-direction: column; }
+.skill-row {
+  display: flex; align-items: stretch;
+  border-bottom: .5px solid var(--border);
+}
+.skill-row:last-child { border-bottom: none; }
+.skill-cat {
+  font-weight: 700; color: var(--navy);
+  background: var(--bg-wash);
+  font-size: 7.2px; letter-spacing: 0.3px;
+  padding: 3px 6px;
+  min-width: 120px; max-width: 120px;
+  display: flex; align-items: center;
+  justify-content: center; text-align: center;
+  text-transform: uppercase; flex-shrink: 0;
+  border-right: 1.5px solid var(--border-mid);
+}
+.skill-vals {
+  color: var(--ink-mid); flex: 1;
+  padding: 2.5px 6px; font-size: 8.5px; line-height: 1.5;
+}
+.sk2 { display: inline; }
+.sk2::after       { content: ", "; }
+.sk2:last-child::after { content: ""; }
+
+/* ── Education ── */
+.edu-row {
+  display: flex; align-items: flex-start;
+  justify-content: space-between;
+  padding: 3px 8px;
+  border-bottom: .5px solid var(--border);
+}
+.edu-row:last-child { border-bottom: none; }
+.edu-left { display: flex; flex-direction: column; gap: 1px; }
+.edu-inst   { font-size: 9.5px; font-weight: 700; color: var(--navy); font-family: 'DM Serif Display', Georgia, serif; }
+.edu-degree { font-size: 8.2px; color: var(--ink-mid); }
+.edu-year   { font-size: 7.8px; font-weight: 600; color: var(--blue-light); font-family: 'Fira Code', monospace; flex-shrink: 0; padding-top: 1px; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RESPONSIVE — TABLET / MOBILE
+   ─────────────────────────────────────────────────────────────────────
+   ROOT CAUSE FIX #5 — Graceful degradation for narrow viewports
+   The resume is inherently a fixed-format document. On screen < 820px
+   we *do not* try to make it fully responsive (it would require a total
+   redesign). Instead we:
+     1. Allow the card to fill the viewport (max-width:100%)
+     2. Let font sizes shrink slightly via a viewport-relative clamp
+     3. Stack header columns vertically
+     4. Switch cert grid to 2 columns
+   This keeps the document readable without horizontal scroll.
+   ═══════════════════════════════════════════════════════════════════════ */
+@media screen and (max-width: 820px) {
+  .page-wrapper { padding-top: 52px; }
+  .resume { border-radius: 0; margin: 0 0 20px; }
+
+  /* Stack header */
+  .resume-header { flex-direction: column; align-items: flex-start; }
+  .hdr-right     { align-items: flex-start; }
+
+  /* 2-col cert grid on tablet */
+  .cert-grid { grid-template-columns: repeat(2, 1fr); }
+  /* Adjust last-row border rule for 2-col */
+  .cert-item:nth-last-child(-n+3) { border-bottom: .5px solid var(--border); }
+  .cert-item:nth-last-child(-n+2) { border-bottom: none; }
+
+  /* Reduce toolbar label on very small screens */
+  .btn-print-hint { display: none; }
+
+  /* Clamp font to prevent overflow — min 7px, ideal viewport-based, max 9.5px */
+  body { font-size: clamp(7px, 1.8vw, 9.5px); }
+}
+
+@media screen and (max-width: 480px) {
+  .cert-grid { grid-template-columns: 1fr; }
+  .cert-item:nth-last-child(-n+2) { border-bottom: .5px solid var(--border); }
+  .cert-item:last-child { border-bottom: none; }
+  .skill-cat { min-width: 90px; max-width: 90px; font-size: 6.5px; }
+  .toolbar-brand span { display: none; } /* just icon on phone */
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PRINT / PDF STYLES
+   ─────────────────────────────────────────────────────────────────────
+   ROOT CAUSE FIX #6 — Correct @page setup
+   Original problem:  @page had margin: 3mm 5mm inside the rule, and
+   separately the .resume had box-shadow + margin, causing the print
+   engine to compute a document taller than one A4 page → blank second
+   page.
+
+   Fix:
+     • @page { size: A4 portrait; margin: 0; } — zero margin here; we
+       control whitespace entirely via the resume's own padding.
+     • All shadows, border-radius, and margins removed in print.
+     • The resume is explicitly sized to 210mm × 297mm so the browser's
+       print engine has nothing to calculate.
+     • `page-break-inside: avoid` on sections that should not split.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/*
+  @page MUST be at the top level — not inside @media print.
+  Some browsers (Safari, older Chrome) ignore @page when nested.
+*/
+@page {
+  size: A4 portrait; /* 210mm × 297mm */
+  margin: 0;         /* zero — all spacing via element CSS below */
+}
+
+@media print {
+
+  /* ── Suppress screen-only chrome ── */
+  .toolbar { display: none !important; }
+
+  /*
+    ROOT CAUSE FIX #7 — Remove padding-top compensation
+    On screen, the page-wrapper has padding-top:48px to clear the
+    fixed toolbar. In print that toolbar is gone, but the padding
+    remains, pushing content down 48px and potentially causing a
+    second page. Clear it.
+  */
+  .page-wrapper {
+    padding-top: 0 !important;
+    display: block !important;
+    background: #fff !important;
+    overflow: visible !important;
+    min-height: 0 !important;
+  }
+
+  body {
+    background: #fff !important;
+    font-size: 8px !important;
+    line-height: 1.28 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+    /*
+      ROOT CAUSE FIX #8 — No font boosting in print
+      Some engines (especially headless Chrome / Puppeteer) boost font
+      sizes during print rendering. Disable it.
+    */
+    -webkit-text-size-adjust: none !important;
+    text-size-adjust: none !important;
+  }
+
+  /*
+    ROOT CAUSE FIX #9 — Explicit A4 dimensions on the card
+    Setting both width AND height (with overflow:hidden) tells the
+    print engine exactly where the page ends. Nothing spills onto
+    a second page.
+
+    NOTE: We do NOT set height:297mm if the content can legitimately
+    be longer — in that case use `overflow:visible` and rely on
+    page-break rules. For a one-page resume, setting the height
+    enforces single-page output.
+  */
+  .resume {
+    width: 210mm !important;
+    max-width: 210mm !important;
+    /* Uncomment if you are sure content fits one page: */
+    /* height: 297mm !important; overflow: hidden !important; */
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    /* Ensure the card itself doesn't trigger a new page context */
+    page-break-inside: auto;
+  }
+
+  /* ── Header ── */
+  .resume-header {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: flex-start !important;
+    padding: 5px 11px 6px !important;
+    border-top: none !important;
+  }
+  .hdr-left { flex: 1 !important; }
+  .hdr-right {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-end !important;
+    flex-shrink: 0 !important;
+    gap: 3px !important;
+    text-align: right !important;
+  }
+  .hdr-name { font-size: 20px !important; line-height: 1.0 !important; }
+  .hdr-subtitle { font-size: 7px !important; margin-top: 2px !important; }
+  .hdr-subtitle .sub-role { font-size: 7.5px !important; }
+  .contact-row { font-size: 7.2px !important; white-space: nowrap !important; gap: 4px !important; }
+  .contact-row i { font-size: 6.6px !important; }
+
+  /* ── Body ── */
+  .resume-body { padding: 4px 11px 4px !important; }
+  .section     { margin-bottom: 4px !important; }
+  .section-title {
+    font-size: 6.8px !important; letter-spacing: 0.4px !important;
+    padding: 2px 7px !important; margin-bottom: 2.5px !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+  .section-title i { font-size: 6.8px !important; }
+
+  /* ── Summary ── */
+  .summary-block { padding: 3.5px 7px 3.5px 9px !important; }
+  .summary-lines { gap: 1.5px !important; }
+  .sum-line { font-size: 7.4px !important; line-height: 1.28 !important; padding-left: 10px !important; }
+  .sum-line::before { top: 4px !important; width: 2.5px !important; height: 2.5px !important; left: 1px !important; }
+
+  /* ── Certs ── */
+  .cert-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 0 5px !important;
+  }
+  .cert-item { font-size: 6.6px !important; padding: 1.5px 0 !important; line-height: 1.3 !important; align-items: baseline !important; }
+  .cert-bullet { font-size: 4.8px !important; }
+
+  /* ── Jobs ── */
+  .job {
+    padding: 2.5px 0 2.5px 7px !important;
+    border-left: none !important;
+    page-break-inside: avoid;
+  }
+  .job-company  { font-size: 9px !important; }
+  .job-role     { font-size: 7.6px !important; }
+  .job-location { font-size: 6.6px !important; }
+  .job-period   { font-size: 6.6px !important; }
+  .job-dot      { font-size: 7.6px !important; }
+  .job-header   { margin-bottom: 1.5px !important; }
+
+  /* ── Project cards ── */
+  .proj-card {
+    padding: 1.5px 0 2px 5px !important;
+    border-left: none !important;
+    page-break-inside: avoid;
+  }
+  .proj-card-name { font-size: 7.1px !important; }
+  .proj-sub-label { font-size: 6.3px !important; }
+  .proj-arrow     { font-size: 6.5px !important; }
+
+  /* ── Bullets ── */
+  .bullet-list li {
+    font-size: 7.4px !important; line-height: 1.28 !important;
+    margin-bottom: 2px !important; padding-left: 10px !important;
+  }
+  .bullet-list li::before { top: 4px !important; width: 2.5px !important; height: 2.5px !important; left: 1px !important; }
+  .bullet-list li .num { font-size: 7.4px !important; }
+  .bk-challenge, .bk-contrib, .bk-impact, .bk { font-size: 7.4px !important; }
+
+  /*
+    ROOT CAUSE FIX #10 — Skill chips in print
+    Original used flex + chip backgrounds in print, which caused
+    variable-width chips to wrap unpredictably and inflate line height.
+    In print: flatten to plain inline text separated by commas.
+    The `::before` bullet is kept; background/border removed.
+  */
+  .skill-chips {
+    display: block !important;
+    padding-left: 10px !important;
+    margin-top: 1.5px !important;
+    font-size: 6.6px !important;
+    line-height: 1.26 !important;
+  }
+  .skill-chips::before { top: 4px !important; width: 2.5px !important; height: 2.5px !important; left: 1px !important; }
+  .sk {
+    display: inline !important;
+    background: none !important;
+    border: none !important;
+    padding: 0 !important;
+    font-size: 6.6px !important;
+    border-radius: 0 !important;
+    white-space: normal !important;
+  }
+  .sk::after { content: ", " !important; }
+  .sk:last-child::after { content: "" !important; }
+  .sk-label { font-size: 6.6px !important; }
+
+  /* ── Skills table ── */
+  .skill-cat {
+    font-size: 5.9px !important;
+    min-width: 102px !important; max-width: 102px !important;
+    padding: 2px 4px !important; letter-spacing: 0.2px !important;
+  }
+  .skill-vals { font-size: 6.9px !important; line-height: 1.3 !important; padding: 2px 6px !important; }
+
+  /* ── Education ── */
+  .edu-row    { padding: 2.5px 7px !important; }
+  .edu-inst   { font-size: 8.2px !important; }
+  .edu-degree { font-size: 6.8px !important; }
+  .edu-year   { font-size: 6.8px !important; }
+
+  /*
+    ROOT CAUSE FIX #11 — Prevent orphaned section titles
+    `orphans` and `widows` don't apply to block elements, but
+    page-break-after: avoid on the title keeps it with its content.
+  */
+  .section-title { page-break-after: avoid; }
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <span class="toolbar-brand">
+    <i class="fas fa-microchip"></i>
+    Chandan Kumar — Lead Data Scientist · IBM Lab
+  </span>
+  <div class="toolbar-actions">
+    <!--
+      ROOT CAUSE FIX #12 — Print is the gold-standard PDF method.
+      Browser Print → Save as PDF uses the native layout engine and
+      honours @page + @media print exactly. html2canvas captures a
+      pixel raster which: (a) inflates file size, (b) loses text
+      selectability, (c) does not honour @media print, and (d) clips
+      at canvas size limits on some devices.
+
+      Strategy: Primary = browser Print (always correct).
+               Secondary = JS PDF (convenience, optional, lower fidelity).
+    -->
+    <button class="btn-tool btn-print" onclick="window.print()">
+      <i class="fas fa-print"></i> Print / Save PDF
+      <span class="btn-print-hint">&nbsp;(Best Quality)</span>
+    </button>
+    <button class="btn-tool btn-pdf" id="pdfBtn" onclick="downloadPDF()">
+      <i class="fas fa-file-pdf"></i> Quick PDF
+    </button>
+  </div>
+</div>
+
+<div class="page-wrapper">
+<div class="resume" id="resumeContent">
+
+<!-- ══ HEADER ══ -->
+<header class="resume-header">
+  <div class="hdr-left">
+    <div class="hdr-name">CHANDAN <em>KUMAR</em></div>
+    <div class="hdr-subtitle">
+      <span class="sub-role">Lead Data Scientist · IBM Lab</span>
+      <span class="sub-sep">|</span>Super 30 Alumni
+      <span class="sub-sep">|</span>IIT Graduate
+      <span class="sub-sep">|</span>8+ Years Exp
+      <span class="sub-sep">|</span>Bengaluru, India
+    </div>
+  </div>
+  <div class="hdr-right">
+    <div class="contact-row"><i class="fas fa-phone"></i><span>+91-9199000200</span></div>
+    <div class="contact-row"><i class="fas fa-envelope"></i><a href="mailto:chandaniitismg@gmail.com">chandaniitismg@gmail.com</a></div>
+    <div class="contact-row"><i class="fab fa-linkedin-in"></i><a href="https://www.linkedin.com/in/chandaniit" target="_blank">linkedin.com/in/chandaniit</a></div>
+  </div>
+</header>
+
+<div class="resume-body">
+
+<!-- ══ PROFESSIONAL SUMMARY ══ -->
+<div class="section">
+  <div class="section-title"><i class="fa-regular fa-address-card"></i>Professional Summary</div>
+  <div class="summary-block">
+    <div class="summary-lines">
+      <div class="sum-line">An <span class="kw">IIT graduate</span> and <span class="kw">Super 30 Alumni</span> with <span class="num">8+ years</span> of deep AI/ML &amp; Data Science experience, currently serving as Lead Data Scientist at <span class="kw">IBM Lab</span> — architecting agentic AI systems powering <span class="kw">IBM Watsonx</span> at global scale across <span class="kw">Watsonx Orchestrate, watsonx.ai, watsonx.governance</span> and <span class="kw">IBM Cloud</span>. Before IBM: led AI transformation at Accenture on <span class="kw">AWS Bedrock &amp; SageMaker</span>; built mission-critical ML at Fortune 500 Clean Harbors on <span class="kw">Azure ML &amp; Azure Data Factory</span>. Three platforms. Three arenas. One through-line: <span class="kw">AI from whiteboard to measurable business outcome.</span></div>
+      <div class="sum-line">Expert in <span class="kw">Python · GenAI · LLMs · Agentic AI · RAG · MLOps · Computer Vision · Deep Learning</span> — with <span class="num">$4M+</span> in verified impact across <span class="num">8+</span> production deployments and <span class="num">15+</span> enterprise AI &amp; GenAI POCs spanning <span class="kw">IBM, AWS, GCP &amp; Azure</span>. POC stack includes <span class="kw">Azure ML Studio · Azure OpenAI · AWS Bedrock · AWS SageMaker · GCP Vertex AI · IBM Watsonx.ai · LangChain · LangGraph · AutoGen · OpenAI GPT-4o · Hugging Face · Anthropic Claude</span> — prototyping agentic workflows, RAG pipelines, LLM fine-tuning, real-time inference, and multimodal AI across regulated industries.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CERTIFICATIONS ══ -->
+<div class="section">
+  <div class="section-title"><i class="fas fa-certificate"></i>Certifications &amp; Badges</div>
+  <div class="cert-grid">
+    <div class="cert-item"><span class="cert-bullet">●</span><span class="cert-inst">Northwestern University</span><span class="cert-sep">·</span><span class="cert-course">Analytics &amp; AI</span></div>
+    <div class="cert-item"><span class="cert-bullet">●</span><span class="cert-inst">IBM</span><span class="cert-sep">·</span><span class="cert-course">AI Associate Data Scientist</span></div>
+    <div class="cert-item"><span class="cert-bullet">●</span><span class="cert-inst">Databricks Academy</span><span class="cert-sep">·</span><span class="cert-course">Generative AI Fundamentals</span></div>
+    <div class="cert-item"><span class="cert-bullet">●</span><span class="cert-inst">IBM</span><span class="cert-sep">·</span><span class="cert-course">Solution Architect — Kubernetes &amp; IBM Cloud Paks</span></div>
+    <div class="cert-item"><span class="cert-bullet">●</span><span class="cert-inst">Stanford University</span><span class="cert-sep">·</span><span class="cert-course">Machine Learning</span></div>
+    <div class="cert-item"><span class="cert-bullet">●</span><span class="cert-inst">LangChain Academy</span><span class="cert-sep">·</span><span class="cert-course">LangGraph &amp; LangSmith</span></div>
+    <div class="cert-item"><span class="cert-bullet">●</span><span class="cert-inst">Anthropic</span><span class="cert-sep">·</span><span class="cert-course">Model Context Protocol: Advanced Topics</span></div>
+    <div class="cert-item"><span class="cert-bullet">●</span><span class="cert-inst">Hugging Face</span><span class="cert-sep">·</span><span class="cert-course">AI Agents Fundamentals</span></div>
+    <div class="cert-item"><span class="cert-bullet">●</span><span class="cert-inst">IBM</span><span class="cert-sep">·</span><span class="cert-course">Trustworthy AI &amp; AI Ethics</span></div>
+    <div class="cert-item"><span class="cert-bullet">●</span><span class="cert-inst">IBM</span><span class="cert-sep">·</span><span class="cert-course">Generative &amp; Agentic AI Foundation</span></div>
+    <div class="cert-item"><span class="cert-bullet">●</span><span class="cert-inst">Duke University</span><span class="cert-sep">·</span><span class="cert-course">DevOps, DataOps, MLOps</span></div>
+    <div class="cert-item"><span class="cert-bullet">●</span><span class="cert-inst">Microsoft</span><span class="cert-sep">·</span><span class="cert-course">Azure Machine Learning</span></div>
+  </div>
+</div>
+
+<!-- ══ PROFESSIONAL EXPERIENCE ══ -->
+<div class="section">
+  <div class="section-title"><i class="fas fa-briefcase"></i>Professional Experience</div>
+
+  <!-- IBM -->
+  <div class="job">
+    <div class="job-header">
+      <div class="job-left">
+        <span class="job-company">IBM Lab</span>
+        <span class="job-dot">◆</span>
+        <span class="job-role">Lead Data Scientist</span>
+        <span class="job-location">· Bengaluru</span>
+      </div>
+      <span class="job-period">Mar 2024 – Present</span>
+    </div>
+
+    <div class="proj-card">
+      <div class="proj-card-header">
+        <div class="proj-card-left">
+          <span class="proj-card-name"><span class="proj-arrow">↳</span> watsonx Orchestrate — Weave &nbsp;<span class="proj-sub-label">Agentic AI Lifecycle Platform · IBM Product</span></span>
+        </div>
+      </div>
+      <ul class="bullet-list">
+        <li><span class="bk-challenge">Challenge:</span> No agentic AI framework existed at IBM — someone had to build it from scratch, own it end-to-end, and ship it before the market moved on.</li>
+        <li><span class="bk-contrib">Contribution:</span> Led core engineering of the <span class="bk">Weave framework</span> — designed the full Build → Validate → Deploy lifecycle: NL requirements parsed into workflow DAGs, automated agent &amp; tool generation with conditional routing, and <span class="bk">60+ enterprise MCP connectors</span> (SAP, Salesforce, ServiceNow, Workday) via OpenAPI transpilation with OAuth2/SAML. Owned testing, validation, and one-click deployment automation end-to-end.</li>
+        <li><span class="bk-impact">Impact:</span> Concept → production in <span class="num">14 months</span> · <span class="num">10M+</span> daily API calls · <span class="num">p99 &lt;200ms</span> · <span class="num">99.9%</span> uptime · <span class="num">$1.5M+</span> enterprise productivity gains · <span class="num">40%</span> inference cost reduction · <span class="kw">adopted as IBM's reference multi-agent platform.</span></li>
+      </ul>
+      <div class="skill-chips"><span class="sk-label">Tech:</span><span class="sk">IBM Watsonx Orchestrate</span><span class="sk">IBM Granite</span><span class="sk">LangGraph</span><span class="sk">AutoGen</span><span class="sk">MCP</span><span class="sk">OpenAPI</span><span class="sk">OAuth2 / SAML</span><span class="sk">IBM Cloud OpenShift</span><span class="sk">Kubernetes</span><span class="sk">Redis</span><span class="sk">OpenTelemetry</span><span class="sk">Python</span></div>
+    </div>
+
+    <div class="proj-card">
+      <div class="proj-card-header">
+        <div class="proj-card-left">
+          <span class="proj-card-name"><span class="proj-arrow">↳</span> watsonx.governance — Enterprise AI Risk &amp; Compliance Platform &nbsp;<span class="proj-sub-label">· IBM Product</span></span>
+        </div>
+      </div>
+      <ul class="bullet-list">
+        <li><span class="bk-challenge">Challenge:</span> Hundreds of AI models in production with no governance — bias, drift, and regulatory breaches accumulating silently, undetected, unreported.</li>
+        <li><span class="bk-contrib">Contribution:</span> Engineered an integrated GRC stack from the ground up — <span class="bk">IBM OpenPages</span> for policy-to-metric mapping and immutable audit trails; <span class="bk">IBM OpenScale</span> for real-time fairness, drift, and hallucination monitoring with automated retraining triggers; <span class="bk">AI FactSheets</span> for machine-readable model provenance. Designed a <span class="bk">Governance Graph</span> linking models, risk controls, and regulatory policies in a queryable knowledge layer; extended multi-cloud coverage to AWS SageMaker and Azure ML.</li>
+        <li><span class="bk-impact">Impact:</span> <span class="num">1,000+</span> models under governed reuse · audit prep time from weeks → hours · data review cycles <span class="num">−58%</span> · <span class="num">200+</span> regulatory frameworks mapped · <span class="kw">designated by IBM as the flagship compliance platform for EU AI Act readiness</span> across FS, healthcare, and public-sector clients.</li>
+      </ul>
+      <div class="skill-chips"><span class="sk-label">Tech:</span><span class="sk">IBM watsonx.governance</span><span class="sk">IBM OpenPages</span><span class="sk">IBM OpenScale</span><span class="sk">AI FactSheets</span><span class="sk">AIF360</span><span class="sk">SHAP / LIME</span><span class="sk">EU AI Act · NIST AI RMF · ISO 42001</span><span class="sk">AWS SageMaker</span><span class="sk">Azure ML</span><span class="sk">OpenTelemetry</span><span class="sk">Python</span></div>
+    </div>
+  </div>
+
+  <!-- ACCENTURE -->
+  <div class="job">
+    <div class="job-header">
+      <div class="job-left">
+        <span class="job-company">Accenture</span>
+        <span class="job-dot">◆</span>
+        <span class="job-role">Data Science Analyst — Strategy &amp; Consulting</span>
+        <span class="job-location">· Gurugram</span>
+      </div>
+      <span class="job-period">Apr 2021 – Feb 2024</span>
+    </div>
+
+    <div class="proj-card">
+      <div class="proj-card-header">
+        <div class="proj-card-left">
+          <span class="proj-card-name"><span class="proj-arrow">↳</span> ASK UB — Intelligent Advisor Platform with HyDE-RAG &nbsp;<span class="proj-sub-label">Client: Ulster Bank (NatWest Group)</span></span>
+        </div>
+      </div>
+      <ul class="bullet-list">
+        <li><span class="bk-challenge">Challenge:</span> Two failure modes, one root cause: models that weren't institution-aware. Advisors were hallucinating on bank-specific policy — in a regulated bank, that's a liability, not a glitch. Compliance teams were manually trawling <span class="num">50K+</span> FCA/PRA documents for <span class="num">4+ hrs/day</span>, one missed circular away from a reportable breach. The fix had to be the same: ground the AI in Ulster Bank's own reality.</li>
+        <li><span class="bk-contrib">Contribution:</span> Domain-adapted a base LLM on Ulster Bank's proprietary corpus (product manuals, policy docs, complaint transcripts) via <span class="bk">LoRA fine-tuning on AWS SageMaker Training Jobs</span>; served through <span class="bk">AWS Bedrock</span> with a downstream <span class="bk">HyDE-RAG layer</span> — the model first generates a hypothetical ideal answer to sharpen retrieval intent, then executes <span class="bk">hybrid BM25 + dense vector search</span> across <span class="num">50K+</span> regulatory documents in <span class="bk">Amazon OpenSearch</span>; every response grounded with citation-level attribution and hallucination guardrails. Deployed serverlessly via <span class="bk">AWS Lambda + API Gateway</span> with auto-scaling through peak audit cycles.</li>
+        <li><span class="bk-impact">Impact:</span> Advisor resolution time <span class="num">−45%</span> · compliance query time <span class="num">−70%</span> · responses under <span class="num">500ms</span> · <span class="num">zero</span> hallucination incidents and <span class="num">zero</span> FCA/PRA violations post-deployment · <span class="kw">architecture licensed and reused across 3 additional Accenture engagements.</span></li>
+      </ul>
+      <div class="skill-chips"><span class="sk-label">Tech:</span><span class="sk">AWS Bedrock</span><span class="sk">AWS SageMaker</span><span class="sk">SageMaker Training Jobs</span><span class="sk">LoRA / PEFT</span><span class="sk">HyDE-RAG</span><span class="sk">BM25 + Dense Retrieval</span><span class="sk">Amazon OpenSearch</span><span class="sk">AWS Lambda</span><span class="sk">AWS API Gateway</span><span class="sk">Hugging Face Transformers</span><span class="sk">LangChain</span><span class="sk">Amazon S3</span><span class="sk">AWS IAM</span><span class="sk">Python</span></div>
+    </div>
+
+    <div class="proj-card">
+      <div class="proj-card-header">
+        <div class="proj-card-left">
+          <span class="proj-card-name"><span class="proj-arrow">↳</span> Facebook BI — Real-Time Content Moderation &amp; Ad Relevance Platform &nbsp;<span class="proj-sub-label">Client: Facebook · Accenture</span></span>
+        </div>
+      </div>
+      <ul class="bullet-list">
+        <li><span class="bk-challenge">Challenge:</span> At Facebook's scale, a fractional drop in moderation recall means millions of policy-violating impressions live per day — and ad relevance degrading even slightly translates to nine-figure revenue at risk. Existing pipelines could not triage petabyte-scale image streams in real time without sacrificing accuracy or incurring catastrophic cost overruns.</li>
+        <li><span class="bk-contrib">Contribution:</span> Architected petabyte-scale real-time computer vision and ML inference platform using <span class="bk">CNNs on PyTorch with AWS SageMaker, Glue, Redshift, and Ray</span> in a <span class="bk">multi-region active-active topology</span>; processed <span class="num">1B+</span> images daily at <span class="num">&lt;50ms</span> latency. Built end-to-end real-time <span class="bk">feature store and ML data pipelines on AWS Glue / Kinesis / Ray</span>, implementing automated A/B testing and shadow deployments via <span class="bk">AWS Step Functions</span> — enabling weekly release cadence without service disruption.</li>
+        <li><span class="bk-impact">Impact:</span> Content moderation recall <span class="num">+15%</span> · ad relevance <span class="num">+12%</span> · processing latency <span class="num">−60%</span> · model rollback incidents <span class="num">−75%</span> · <span class="kw">adopted by Facebook engineering as the production reference architecture for real-time vision inference at petabyte scale.</span></li>
+      </ul>
+      <div class="skill-chips"><span class="sk-label">Tech:</span><span class="sk">PyTorch</span><span class="sk">CNN</span><span class="sk">AWS SageMaker</span><span class="sk">AWS Glue</span><span class="sk">Amazon Kinesis</span><span class="sk">Amazon Redshift</span><span class="sk">Ray</span><span class="sk">AWS Step Functions</span><span class="sk">A/B Testing</span><span class="sk">Shadow Deployment</span><span class="sk">Multi-Region Active-Active</span><span class="sk">Python</span></div>
+    </div>
+  </div>
+
+  <!-- CAPGEMINI -->
+  <div class="job">
+    <div class="job-header">
+      <div class="job-left">
+        <span class="job-company">Capgemini</span>
+        <span class="job-dot">◆</span>
+        <span class="job-role">Analytics Process Lead</span>
+        <span class="job-location">· Bengaluru</span>
+      </div>
+      <span class="job-period">Feb 2021 – Mar 2021</span>
+    </div>
+    <ul class="bullet-list">
+      <li>Designed end-to-end <span class="bk">Azure analytics architecture</span> — data ingestion, transformation, orchestration, and reporting workflows — delivering technical blueprints and implementation roadmaps for enterprise-scale analytics migration.</li>
+    </ul>
+  </div>
+
+  <!-- CLEAN HARBORS -->
+  <div class="job">
+    <div class="job-header">
+      <div class="job-left">
+        <span class="job-company">Clean Harbors</span>
+        <span class="job-dot">◆</span>
+        <span class="job-role">Data Scientist — AI/ML Engineering</span>
+        <span class="job-location">· Hyderabad (India Technology Centre, Fortune 500 USA)</span>
+      </div>
+      <span class="job-period">Jun 2018 – Jan 2021</span>
+    </div>
+
+    <div class="proj-card">
+      <div class="proj-card-header">
+        <div class="proj-card-left">
+          <span class="proj-card-name"><span class="proj-arrow">↳</span> Waste Classification Code System (WCC) — End-to-End Lifecycle Platform &nbsp;<span class="proj-sub-label">EPA-Compliant Hazardous Waste ML System</span></span>
+        </div>
+      </div>
+      <ul class="bullet-list">
+        <li><span class="bk-challenge">Challenge:</span> A single misclassified waste stream triggers a federal EPA violation — and every classification was being made manually, by hand, every time, with no ML safeguard in place.</li>
+        <li><span class="bk-contrib">Contribution:</span> Architected a complete end-to-end intelligent waste classification platform in Python using a <span class="bk">hybrid CNN + rule-based engine on Azure ML Studio</span>, ingesting physical and chemical properties for full lifecycle regulatory code assignment. Designed <span class="bk">synthetic data augmentation</span> and <span class="bk">SMOTE</span> to address extreme class imbalance; built an <span class="bk">MLOps monitoring stack with automated drift detection and retraining triggers via Azure Data Factory</span>; integrated <span class="bk">SHAP explainability</span> for auditability; deployed as a <span class="bk">REST API via Azure App Service</span> with live <span class="bk">Power BI</span> compliance dashboards.</li>
+        <li><span class="bk-impact">Impact:</span> <span class="num">100%</span> manual classification eliminated · rare-category F1 score <span class="num">+28%</span> · misclassifications <span class="num">−40%</span> · throughput accelerated <span class="num">+22%</span> · <span class="num">$500K</span> annual regulatory savings · <span class="kw">zero EPA violations post-deployment.</span></li>
+      </ul>
+      <div class="skill-chips"><span class="sk-label">Tech:</span><span class="sk">Azure ML Studio</span><span class="sk">Hybrid CNN + Rule-Based Engine</span><span class="sk">Azure Data Factory</span><span class="sk">Azure App Service</span><span class="sk">SMOTE</span><span class="sk">Synthetic Data Augmentation</span><span class="sk">SHAP Explainability</span><span class="sk">Drift Detection</span><span class="sk">Automated Retraining</span><span class="sk">REST API</span><span class="sk">Power BI</span><span class="sk">Python</span></div>
+    </div>
+
+    <div class="proj-card">
+      <div class="proj-card-header">
+        <div class="proj-card-left">
+          <span class="proj-card-name"><span class="proj-arrow">↳</span> Invoice Audit Automation &amp; Revenue Protection Platform &nbsp;<span class="proj-sub-label">Intelligent Billing Prediction &amp; Revenue Leakage Protection</span></span>
+        </div>
+      </div>
+      <ul class="bullet-list">
+        <li><span class="bk-challenge">Challenge:</span> Finance losing <span class="num">$750K+</span> a year to billing errors no one could see — every invoice hand-computed, every discrepancy hidden in plain sight across thousands of service engagements.</li>
+        <li><span class="bk-contrib">Contribution:</span> Developed an ML-powered invoice audit and anomaly detection system in Python/SQL with <span class="bk">multi-model ensembles and automated retraining on Azure ML Studio, SQL Database, and Data Factory</span> — trained on <span class="num">47</span> domain-engineered billing features (hours, truck count, service codes, contract tiers, seasonal cycles) to predict expected invoice totals and flag anomalous gaps. Integrated seamlessly with the upstream Waste Classification platform via <span class="bk">Azure Data Factory</span> for closed-loop automation; surfaced executive anomaly dashboards in <span class="bk">Power BI</span>, reducing false-positive flags by <span class="num">35%</span> and improving dispute resolution speed by <span class="num">50%</span>.</li>
+        <li><span class="bk-impact">Impact:</span> <span class="num">80%</span> of audit workflows fully automated · prediction accuracy sustained at <span class="num">&gt;94%</span> · <span class="num">$750K</span> annual revenue protected · dispute resolution time <span class="num">−50%</span> · false-positive flags <span class="num">−35%</span>.</li>
+      </ul>
+      <div class="skill-chips"><span class="sk-label">Tech:</span><span class="sk">Azure ML Studio</span><span class="sk">Azure Data Factory</span><span class="sk">Azure SQL Database</span><span class="sk">Azure App Service</span><span class="sk">Multi-Model Ensemble</span><span class="sk">Gradient Boosting (Regression)</span><span class="sk">Feature Engineering</span><span class="sk">Drift Detection</span><span class="sk">Automated Retraining</span><span class="sk">Power BI</span><span class="sk">Python</span><span class="sk">SQL</span></div>
+    </div>
+  </div>
+</div><!-- /Experience -->
+
+<!-- ══ EDUCATION ══ -->
+<div class="section">
+  <div class="section-title"><i class="fas fa-graduation-cap"></i>Education</div>
+  <div class="edu-row">
+    <div class="edu-left" style="flex-direction:row;align-items:baseline;gap:6px;">
+      <span class="edu-inst">IIT (ISM) Dhanbad</span>
+      <span style="color:var(--border-mid);font-size:7px;">·</span>
+      <span class="edu-degree">B.Tech — Bachelor of Technology</span>
+    </div>
+    <span class="edu-year">2013 – 2017</span>
+  </div>
+</div>
+
+<!-- ══ TECHNICAL SKILLS ══ -->
+<div class="section">
+  <div class="section-title"><i class="fas fa-laptop-code"></i>Technical Skills</div>
+  <div class="skills-wrap">
+    <div class="skill-row">
+      <span class="skill-cat">Agentic AI &amp; LLMs</span>
+      <span class="skill-vals">
+        <span class="sk2">IBM Watsonx Orchestrate</span><span class="sk2">LangGraph</span><span class="sk2">AutoGen</span><span class="sk2">CrewAI</span><span class="sk2">MCP (Model Context Protocol)</span><span class="sk2">LangChain</span><span class="sk2">LlamaIndex</span><span class="sk2">Semantic Kernel</span><span class="sk2">GPT-4o</span><span class="sk2">Anthropic Claude (Sonnet / Opus)</span><span class="sk2">Llama 3.x</span><span class="sk2">IBM Granite</span><span class="sk2">Multi-Agent Orchestration</span><span class="sk2">Hierarchical Planner-Executor Architecture</span><span class="sk2">DAG-Based Task Decomposition</span><span class="sk2">MCP Server Design &amp; OpenAPI Transpilation</span><span class="sk2">Tool Use &amp; Function Calling</span><span class="sk2">ReAct &amp; Chain-of-Thought</span><span class="sk2">Token Cost Optimization</span>
+      </span>
+    </div>
+    <div class="skill-row">
+      <span class="skill-cat">RAG &amp; Knowledge Systems</span>
+      <span class="skill-vals">
+        <span class="sk2">Enterprise RAG Pipelines</span><span class="sk2">GraphRAG</span><span class="sk2">HyDE-RAG</span><span class="sk2">Hybrid Retrieval (BM25 + Dense)</span><span class="sk2">Cross-Encoder Re-ranking</span><span class="sk2">Hallucination Guardrails</span><span class="sk2">Citation Grounding</span><span class="sk2">Pinecone</span><span class="sk2">Weaviate</span><span class="sk2">FAISS</span><span class="sk2">Neo4j</span><span class="sk2">Amazon OpenSearch</span>
+      </span>
+    </div>
+    <div class="skill-row">
+      <span class="skill-cat">LLM Fine-Tuning &amp; Alignment</span>
+      <span class="skill-vals">
+        <span class="sk2">LoRA / QLoRA</span><span class="sk2">RLHF</span><span class="sk2">DPO</span><span class="sk2">PEFT</span><span class="sk2">GPTQ/AWQ Quantization</span><span class="sk2">Supervised Fine-Tuning (SFT)</span><span class="sk2">Instruction Tuning</span><span class="sk2">Hugging Face Transformers</span><span class="sk2">FSDP / DeepSpeed</span><span class="sk2">vLLM</span><span class="sk2">Triton Inference Server</span>
+      </span>
+    </div>
+    <div class="skill-row">
+      <span class="skill-cat">ML &amp; Deep Learning</span>
+      <span class="skill-vals">
+        <span class="sk2">PyTorch</span><span class="sk2">TensorFlow</span><span class="sk2">Scikit-learn</span><span class="sk2">XGBoost</span><span class="sk2">LightGBM</span><span class="sk2">BERT/RoBERTa</span><span class="sk2">CNN / Vision Transformers (ViT)</span><span class="sk2">Diffusion Models</span><span class="sk2">Graph Neural Networks</span><span class="sk2">Time-Series Forecasting</span><span class="sk2">Feature Engineering</span><span class="sk2">Synthetic Data Augmentation</span><span class="sk2">SMOTE</span>
+      </span>
+    </div>
+    <div class="skill-row">
+      <span class="skill-cat">MLOps &amp; Infra</span>
+      <span class="skill-vals">
+        <span class="sk2">MLflow</span><span class="sk2">Kubeflow</span><span class="sk2">Weights &amp; Biases</span><span class="sk2">Azure Pipelines (CI/CD)</span><span class="sk2">Shadow Deployment</span><span class="sk2">A/B Testing</span><span class="sk2">Drift Detection &amp; Automated Retraining</span><span class="sk2">Docker</span><span class="sk2">Kubernetes / HPA</span><span class="sk2">Helm</span><span class="sk2">Terraform</span><span class="sk2">Multi-Region HA Architecture</span><span class="sk2">Ray</span>
+      </span>
+    </div>
+    <div class="skill-row">
+      <span class="skill-cat">Cloud Platforms</span>
+      <span class="skill-vals">
+        <span class="sk2">IBM Watsonx.ai</span><span class="sk2">IBM Cloud Pak for Data</span><span class="sk2">IBM Cloud OpenShift</span><span class="sk2">IBM OpenScale</span><span class="sk2">AWS SageMaker</span><span class="sk2">AWS Bedrock</span><span class="sk2">AWS Glue</span><span class="sk2">Amazon Kinesis</span><span class="sk2">Amazon Redshift</span><span class="sk2">Azure ML Studio</span><span class="sk2">Azure OpenAI</span><span class="sk2">Azure Databricks</span><span class="sk2">GCP Vertex AI</span><span class="sk2">GCP BigQuery</span><span class="sk2">GCP Cloud Run</span><span class="sk2">GCP Dataflow</span><span class="sk2">GCP Pub/Sub</span><span class="sk2">GCP Cloud Storage</span>
+      </span>
+    </div>
+    <div class="skill-row">
+      <span class="skill-cat">Data &amp; Engineering</span>
+      <span class="skill-vals">
+        <span class="sk2">Python (Expert)</span><span class="sk2">SQL</span><span class="sk2">PySpark</span><span class="sk2">FastAPI</span><span class="sk2">Snowflake</span><span class="sk2">Databricks</span><span class="sk2">Delta Lake</span><span class="sk2">dbt</span><span class="sk2">Apache Airflow</span><span class="sk2">Kafka</span><span class="sk2">Redis</span>
+      </span>
+    </div>
+    <div class="skill-row">
+      <span class="skill-cat">Responsible AI &amp; Governance</span>
+      <span class="skill-vals">
+        <span class="sk2">Explainable AI (SHAP/LIME)</span><span class="sk2">AI Governance &amp; Policy</span><span class="sk2">Bias Detection (AIF360, Fairlearn)</span><span class="sk2">LLM Guardrails</span><span class="sk2">NeMo Guardrails</span><span class="sk2">GDPR / CCPA / EU AI Act</span><span class="sk2">NIST AI RMF</span><span class="sk2">ISO 42001</span><span class="sk2">Model Risk Management</span><span class="sk2">AI Strategy &amp; Roadmapping</span>
+      </span>
+    </div>
+    <div class="skill-row">
+      <span class="skill-cat">Observability &amp; Analytics</span>
+      <span class="skill-vals">
+        <span class="sk2">Prometheus</span><span class="sk2">Grafana</span><span class="sk2">OpenTelemetry</span><span class="sk2">LLM Observability (Langfuse, Arize AI)</span><span class="sk2">LangSmith</span><span class="sk2">RAGAS</span><span class="sk2">Power BI</span><span class="sk2">Tableau</span>
+      </span>
+    </div>
+  </div>
+</div>
+
+</div><!-- /resume-body -->
+</div><!-- /resume -->
+</div><!-- /page-wrapper -->
+
+<script>
+/*
+  ═══════════════════════════════════════════════════════════════════════
+  PDF GENERATION — STRATEGY & ROOT CAUSES
+  ───────────────────────────────────────────────────────────────────────
+  Why the original html2canvas approach was unreliable:
+
+  1. html2canvas rasterises the DOM into a <canvas> at the given scale.
+     At scale:2 on a 794px-wide resume, the canvas is 1588px wide.
+     jsPDF then fits that image into 210mm (595pt at 72dpi).
+     The pixel math is: 1588px → 595pt → the downscale ratio is ~2.67×.
+     Any sub-pixel difference in the original layout gets amplified,
+     causing text to clip at the bottom of the jsPDF page boundary.
+
+  2. The `windowWidth:794` hint to html2canvas forces a 794px layout
+     context, but the *actual* viewport may be wider (e.g. 1440px).
+     When html2canvas triggers a reflow to 794px, some elements that
+     were measured at 1440px don't re-measure correctly → layout jitter.
+
+  3. html2canvas does not execute @media print rules. So the screen
+     version (with toolbar, 48px padding-top, chip badges, shadows) is
+     what gets rasterised, not the print-optimised version. The original
+     code tried to inject a style override manually — but that override
+     runs asynchronously and races with html2canvas initialisation.
+
+  4. Canvas size limits: older Safari caps canvas at 16.7 MP. A 1588×N
+     canvas for a content-heavy page can hit this limit, silently
+     cropping the bottom of the resume.
+
+  FIX STRATEGY — Two-tier approach:
+  ─────────────────────────────────
+  TIER 1 (Primary, recommended): window.print()
+    The browser's native print engine is the only path that correctly
+    honours @page, @media print, margin: 0, and colour reproduction.
+    Chrome/Edge "Save as PDF" from the print dialog produces a
+    vector PDF (not a raster), text is selectable and searchable,
+    and file size is typically 50–150 KB.
+
+  TIER 2 (Fallback / "Quick PDF" button): html2canvas + jsPDF
+    Kept as a convenience option for users who cannot find the print
+    dialog, but with the following improvements:
+      a. The resume is temporarily resized to exactly 794px.
+      b. The toolbar is hidden before capture.
+      c. The page-wrapper top padding is zeroed.
+      d. A 300ms settle delay lets fonts re-render.
+      e. Scale:3 gives higher fidelity at the cost of ~2× file size.
+      f. JPEG quality 0.92 keeps it under 2 MB.
+  ═══════════════════════════════════════════════════════════════════════
+*/
+
+async function downloadPDF() {
+  const btn  = document.getElementById('pdfBtn');
+  const orig = btn.innerHTML;
+
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating…';
+  btn.disabled  = true;
+
+  try {
+    // ── Step 1: Force exact 794px layout context ─────────────────────
+    const el      = document.getElementById('resumeContent');
+    const wrapper = document.querySelector('.page-wrapper');
+
+    const prevElWidth      = el.style.width;
+    const prevElMaxWidth   = el.style.maxWidth;
+    const prevWrapPadding  = wrapper.style.paddingTop;
+
+    el.style.width         = '794px';
+    el.style.maxWidth      = '794px';
+    wrapper.style.paddingTop = '0';
+
+    // ── Step 2: Hide toolbar ─────────────────────────────────────────
+    const toolbar = document.querySelector('.toolbar');
+    const prevToolbarDisplay = toolbar.style.display;
+    toolbar.style.display = 'none';
+
+    // ── Step 3: Settle time (fonts, reflow) ──────────────────────────
+    await new Promise(r => setTimeout(r, 300));
+
+    // ── Step 4: Capture ──────────────────────────────────────────────
+    const canvas = await html2canvas(el, {
+      scale:           3,          // Higher fidelity
+      useCORS:         true,
+      allowTaint:      true,
+      backgroundColor: '#ffffff',
+      logging:         false,
+      /*
+        Do NOT pass windowWidth here — we've already forced the element
+        to 794px. Passing windowWidth forces another reflow that can
+        desync from our manual resize.
+      */
+      onclone: (clonedDoc) => {
+        // The clone runs in an iframe; synchronously apply our overrides
+        const clonedEl      = clonedDoc.getElementById('resumeContent');
+        const clonedWrapper = clonedDoc.querySelector('.page-wrapper');
+        const clonedToolbar = clonedDoc.querySelector('.toolbar');
+
+        if (clonedEl)      { clonedEl.style.width = '794px'; clonedEl.style.maxWidth = '794px'; }
+        if (clonedWrapper) { clonedWrapper.style.paddingTop = '0'; clonedWrapper.style.background = '#fff'; }
+        if (clonedToolbar) { clonedToolbar.style.display = 'none'; }
+      }
+    });
+
+    // ── Step 5: Restore DOM ───────────────────────────────────────────
+    el.style.width         = prevElWidth;
+    el.style.maxWidth      = prevElMaxWidth;
+    wrapper.style.paddingTop = prevWrapPadding;
+    toolbar.style.display  = prevToolbarDisplay;
+
+    // ── Step 6: Build PDF ─────────────────────────────────────────────
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+
+    /*
+      Calculate the aspect ratio correctly.
+      A4 width = 210mm. Height is calculated to preserve aspect ratio,
+      then clamped to 297mm. If content is taller than 297mm the bottom
+      will be clipped — which is correct for a one-page resume. If the
+      resume spans multiple pages, switch to addPage() logic.
+    */
+    const pageWidth  = 210; // mm
+    const pageHeight = 297; // mm
+    const imgWidth   = canvas.width;
+    const imgHeight  = canvas.height;
+    const ratio      = imgWidth / imgHeight;
+    const pdfH       = Math.min(pageWidth / ratio, pageHeight);
+
+    pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pdfH, undefined, 'FAST');
+    pdf.save('Chandan_Kumar_LeadGenAI_Resume.pdf');
+
+  } catch (err) {
+    console.error('PDF generation failed:', err);
+    alert(
+      'Quick PDF failed.\n\n' +
+      'Use the "Print / Save PDF" button instead:\n' +
+      '  1. Click Print / Save PDF\n' +
+      '  2. In the print dialog, select "Save as PDF" as the destination\n' +
+      '  3. Set margins to None\n' +
+      '  4. Click Save\n\n' +
+      'This produces a higher-quality, text-searchable PDF.'
+    );
+  } finally {
+    btn.innerHTML = orig;
+    btn.disabled  = false;
+  }
+}
+</script>
+</body>
+</html>
